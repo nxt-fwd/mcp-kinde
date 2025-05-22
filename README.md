@@ -1,6 +1,6 @@
-# Model Context Protocol (MCP) Server + Auth0
+# Model Context Protocol (MCP) Server + Kinde
 
-This is a [Model Context Protocol (MCP)](https://modelcontextprotocol.io/introduction) server that supports remote MCP connections, with Auth0 built-in.
+This is a [Model Context Protocol (MCP)](https://modelcontextprotocol.io/introduction) server that supports remote MCP connections, with Kinde built-in for authentication. It is a fork of Cloudflare's [MCP Server + Auth0](https://github.com/cloudflare/ai/tree/main/demos/remote-mcp-auth0/mcp-auth0-oidc) repository.
 
 The MCP server (powered by [Cloudflare Workers](https://developers.cloudflare.com/workers/)):
 
