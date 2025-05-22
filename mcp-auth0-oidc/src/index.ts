@@ -8,12 +8,13 @@ import { authorize, callback, confirmConsent, tokenExchangeCallback } from './au
 
 export class AuthenticatedMCP extends McpAgent<Env, {}, UserProps> {
   server = new McpServer({
-    name: 'Auth0 OIDC Proxy Demo',
+    name: 'Kinde OIDC Proxy Demo',
     version: '1.0.0',
   })
 
   async init() {
-    // Useful for debugging. This will show the current user's claims and the Auth0 tokens.
+
+    // Useful for debugging. This will show the current user's claims and the Kinde tokens.
     this.server.tool('whoami', "Get the current user's details", {}, async () => ({
       content: [{ type: 'text', text: JSON.stringify(this.props.claims, null, 2) }],
     }))
@@ -23,7 +24,7 @@ export class AuthenticatedMCP extends McpAgent<Env, {}, UserProps> {
       try {
         const response = await fetch(`${this.env.API_BASE_URL}/api/todos`, {
           headers: {
-            // The Auth0 Access Token is available in props.tokenSet and can be used to call the Upstream API (Todos API).
+            // The Kinde Access Token is available in props.tokenSet and can be used to call the Upstream API (Todos API).
             Authorization: `Bearer ${this.props.tokenSet.accessToken}`,
           },
         })
@@ -38,6 +39,7 @@ export class AuthenticatedMCP extends McpAgent<Env, {}, UserProps> {
           ],
         }
       } catch (e) {
+        console.error("API call failed:", e);
         return {
           content: [{ type: 'text', text: `The call to the Todos API failed: ${e}` }],
         }

@@ -3,11 +3,11 @@
 interface Env {
     NODE_ENV: string
     OAUTH_KV: KVNamespace
-    AUTH0_DOMAIN: string
-    AUTH0_AUDIENCE: string
-    AUTH0_SCOPE: string
-    AUTH0_CLIENT_ID: string
-    AUTH0_CLIENT_SECRET: string
+    KINDE_DOMAIN: string
+    KINDE_AUDIENCE: string
+    KINDE_SCOPE: string
+    KINDE_CLIENT_ID: string
+    KINDE_CLIENT_SECRET: string
     API_BASE_URL: string
     MCP_OBJECT: DurableObjectNamespace<import('./src/index').AuthenticatedMCP>
     AI: Ai
@@ -17,11 +17,11 @@ declare namespace Cloudflare {
     interface Env {
         NODE_ENV: string
         OAUTH_KV: KVNamespace
-        AUTH0_DOMAIN: string
-        AUTH0_AUDIENCE: string
-        AUTH0_SCOPE: string
-        AUTH0_CLIENT_ID: string
-        AUTH0_CLIENT_SECRET: string
+        KINDE_DOMAIN: string
+        KINDE_AUDIENCE: string
+        KINDE_SCOPE: string
+        KINDE_CLIENT_ID: string
+        KINDE_CLIENT_SECRET: string
         API_BASE_URL: string
         MCP_OBJECT: DurableObjectNamespace<import('./src/index').AuthenticatedMCP>
         AI: Ai

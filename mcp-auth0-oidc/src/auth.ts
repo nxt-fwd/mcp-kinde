@@ -13,7 +13,7 @@ import type {
 
 import type { UserProps } from "./types";
 
-type Auth0AuthRequest = {
+type KindeAuthRequest = {
 	mcpAuthRequest: AuthRequest;
 	codeVerifier: string;
 	codeChallenge: string;
@@ -27,6 +27,8 @@ export async function getOidcConfig({
 	client_id,
 	client_secret,
 }: { issuer: string; client_id: string; client_secret: string }) {
+	console.log("getOidcConfig - Input:", { issuer, client_id: client_id.substring(0, 5) + "..." });
+
 	const as = await oauth
 		.discoveryRequest(new URL(issuer), { algorithm: "oidc" })
 		.then((response) => oauth.processDiscoveryResponse(new URL(issuer), response));
@@ -43,10 +45,13 @@ export async function getOidcConfig({
  * This route initiates the Authorization Code Flow when a user wants to log in.
  * It creates a random state parameter to prevent CSRF attacks and stores the
  * original request information in a state-specific cookie for later retrieval.
- * Then it shows a consent screen before redirecting to Auth0.
+ * Then it shows a consent screen before redirecting to Kinde.
  */
 export async function authorize(c: Context<{ Bindings: Env & { OAUTH_PROVIDER: OAuthHelpers } }>) {
+
 	const mcpClientAuthRequest = await c.env.OAUTH_PROVIDER.parseAuthRequest(c.req.raw);
+
+
 	if (!mcpClientAuthRequest.clientId) {
 		return c.text("Invalid request", 400);
 	}
@@ -56,13 +61,13 @@ export async function authorize(c: Context<{ Bindings: Env & { OAUTH_PROVIDER: O
 		return c.text("Invalid client", 400);
 	}
 
-	// Generate all that is needed for the Auth0 auth request
+	// Generate all that is needed for the Kinde auth request
 	const codeVerifier = oauth.generateRandomCodeVerifier();
 	const transactionState = oauth.generateRandomState();
 	const consentToken = oauth.generateRandomState(); // For CSRF protection on consent form
 
 	// We will persist everything in a cookie.
-	const auth0AuthRequest: Auth0AuthRequest = {
+	const kindeAuthRequest: KindeAuthRequest = {
 		mcpAuthRequest: mcpClientAuthRequest,
 		nonce: oauth.generateRandomNonce(),
 		codeVerifier,
@@ -72,8 +77,8 @@ export async function authorize(c: Context<{ Bindings: Env & { OAUTH_PROVIDER: O
 	};
 
 	// Store the auth request in a transaction-specific cookie
-	const cookieName = `auth0_req_${transactionState}`;
-	setCookie(c, cookieName, btoa(JSON.stringify(auth0AuthRequest)), {
+	const cookieName = `kinde_req_${transactionState}`;
+	setCookie(c, cookieName, btoa(JSON.stringify(kindeAuthRequest)), {
 		path: "/",
 		httpOnly: true,
 		secure: c.env.NODE_ENV !== "development",
@@ -85,7 +90,7 @@ export async function authorize(c: Context<{ Bindings: Env & { OAUTH_PROVIDER: O
 	const clientName = client.clientName || client.clientId;
 	const clientLogo = client.logoUri || ""; // No default logo
 	const clientUri = client.clientUri || "#";
-	const requestedScopes = (c.env.AUTH0_SCOPE || "").split(" ");
+	const requestedScopes = (c.env.KINDE_SCOPE || "").split(" ");
 
 	// Render the consent screen with CSRF protection
 	return c.html(
@@ -104,7 +109,7 @@ export async function authorize(c: Context<{ Bindings: Env & { OAUTH_PROVIDER: O
 /**
  * Consent Confirmation Endpoint
  *
- * This route handles the consent confirmation before redirecting to Auth0
+ * This route handles the consent confirmation before redirecting to Kinde
  */
 export async function confirmConsent(
 	c: Context<{ Bindings: Env & { OAUTH_PROVIDER: OAuthHelpers } }>,
@@ -121,30 +126,30 @@ export async function confirmConsent(
 	}
 
 	// Get the transaction-specific cookie
-	const cookieName = `auth0_req_${transactionState}`;
-	const auth0AuthRequestCookie = getCookie(c, cookieName);
-	if (!auth0AuthRequestCookie) {
+	const cookieName = `kinde_req_${transactionState}`;
+	const kindeAuthRequestCookie = getCookie(c, cookieName);
+	if (!kindeAuthRequestCookie) {
 		return c.text("Invalid or expired transaction", 400);
 	}
 
-	// Parse the Auth0 auth request from the cookie
-	const auth0AuthRequest = JSON.parse(atob(auth0AuthRequestCookie)) as Auth0AuthRequest;
+	// Parse the Kinde auth request from the cookie
+	const kindeAuthRequest = JSON.parse(atob(kindeAuthRequestCookie)) as KindeAuthRequest;
 
 	// Validate the CSRF token
-	if (auth0AuthRequest.consentToken !== consentToken) {
+	if (kindeAuthRequest.consentToken !== consentToken) {
 		return c.text("Invalid consent token", 403);
 	}
 
 	// Handle user denial
 	if (consentAction !== "approve") {
 		// Parse the MCP client auth request to get the original redirect URI
-		const redirectUri = new URL(auth0AuthRequest.mcpAuthRequest.redirectUri);
+		const redirectUri = new URL(kindeAuthRequest.mcpAuthRequest.redirectUri);
 
 		// Add error parameters to the redirect URI
 		redirectUri.searchParams.set("error", "access_denied");
 		redirectUri.searchParams.set("error_description", "User denied the request");
-		if (auth0AuthRequest.mcpAuthRequest.state) {
-			redirectUri.searchParams.set("state", auth0AuthRequest.mcpAuthRequest.state);
+		if (kindeAuthRequest.mcpAuthRequest.state) {
+			redirectUri.searchParams.set("state", kindeAuthRequest.mcpAuthRequest.state);
 		}
 
 		// Clear the transaction cookie
@@ -157,21 +162,21 @@ export async function confirmConsent(
 	}
 
 	const { as } = await getOidcConfig({
-		issuer: `https://${c.env.AUTH0_DOMAIN}/`,
-		client_id: c.env.AUTH0_CLIENT_ID,
-		client_secret: c.env.AUTH0_CLIENT_SECRET,
+		issuer: `https://${c.env.KINDE_DOMAIN}/`,
+		client_id: c.env.KINDE_CLIENT_ID,
+		client_secret: c.env.KINDE_CLIENT_SECRET,
 	});
 
-	// Redirect to Auth0's authorization endpoint
+	// Redirect to Kinde's authorization endpoint
 	const authorizationUrl = new URL(as.authorization_endpoint!);
-	authorizationUrl.searchParams.set("client_id", c.env.AUTH0_CLIENT_ID);
+	authorizationUrl.searchParams.set("client_id", c.env.KINDE_CLIENT_ID);
 	authorizationUrl.searchParams.set("redirect_uri", new URL("/callback", c.req.url).href);
 	authorizationUrl.searchParams.set("response_type", "code");
-	authorizationUrl.searchParams.set("audience", c.env.AUTH0_AUDIENCE);
-	authorizationUrl.searchParams.set("scope", c.env.AUTH0_SCOPE);
-	authorizationUrl.searchParams.set("code_challenge", auth0AuthRequest.codeChallenge);
+	authorizationUrl.searchParams.set("audience", c.env.KINDE_AUDIENCE);
+	authorizationUrl.searchParams.set("scope", c.env.KINDE_SCOPE);
+	authorizationUrl.searchParams.set("code_challenge", kindeAuthRequest.codeChallenge);
 	authorizationUrl.searchParams.set("code_challenge_method", "S256");
-	authorizationUrl.searchParams.set("nonce", auth0AuthRequest.nonce);
+	authorizationUrl.searchParams.set("nonce", kindeAuthRequest.nonce);
 	authorizationUrl.searchParams.set("state", transactionState);
 	return c.redirect(authorizationUrl.href);
 }
@@ -179,25 +184,25 @@ export async function confirmConsent(
 /**
  * OAuth Callback Endpoint
  *
- * This route handles the callback from Auth0 after user authentication.
+ * This route handles the callback from Kinde after user authentication.
  * It exchanges the authorization code for tokens and completes the
  * authorization process.
  */
 export async function callback(c: Context<{ Bindings: Env & { OAUTH_PROVIDER: OAuthHelpers } }>) {
-	// Parse the state parameter to extract transaction state and Auth0 state
+	// Parse the state parameter to extract transaction state and Kinde state
 	const stateParam = c.req.query("state") as string;
 	if (!stateParam) {
 		return c.text("Invalid state parameter", 400);
 	}
 
-	// Parse the Auth0 auth request from the transaction-specific cookie
-	const cookieName = `auth0_req_${stateParam}`;
-	const auth0AuthRequestCookie = getCookie(c, cookieName);
-	if (!auth0AuthRequestCookie) {
+	// Parse the Kinde auth request from the transaction-specific cookie
+	const cookieName = `kinde_req_${stateParam}`;
+	const kindeAuthRequestCookie = getCookie(c, cookieName);
+	if (!kindeAuthRequestCookie) {
 		return c.text("Invalid transaction state or session expired", 400);
 	}
 
-	const auth0AuthRequest = JSON.parse(atob(auth0AuthRequestCookie)) as Auth0AuthRequest;
+	const kindeAuthRequest = JSON.parse(atob(kindeAuthRequestCookie)) as KindeAuthRequest;
 
 	// Clear the transaction cookie as it's no longer needed
 	setCookie(c, cookieName, "", {
@@ -206,9 +211,9 @@ export async function callback(c: Context<{ Bindings: Env & { OAUTH_PROVIDER: OA
 	});
 
 	const { as, client, clientAuth } = await getOidcConfig({
-		issuer: `https://${c.env.AUTH0_DOMAIN}/`,
-		client_id: c.env.AUTH0_CLIENT_ID,
-		client_secret: c.env.AUTH0_CLIENT_SECRET,
+		issuer: `https://${c.env.KINDE_DOMAIN}/`,
+		client_id: c.env.KINDE_CLIENT_ID,
+		client_secret: c.env.KINDE_CLIENT_SECRET,
 	});
 
 	// Perform the Code Exchange
@@ -216,7 +221,7 @@ export async function callback(c: Context<{ Bindings: Env & { OAUTH_PROVIDER: OA
 		as,
 		client,
 		new URL(c.req.url),
-		auth0AuthRequest.transactionState,
+		kindeAuthRequest.transactionState,
 	);
 	const response = await oauth.authorizationCodeGrantRequest(
 		as,
@@ -224,29 +229,29 @@ export async function callback(c: Context<{ Bindings: Env & { OAUTH_PROVIDER: OA
 		clientAuth,
 		params,
 		new URL("/callback", c.req.url).href,
-		auth0AuthRequest.codeVerifier,
+		kindeAuthRequest.codeVerifier,
 	);
 
 	// Process the response
 	const result = await oauth.processAuthorizationCodeResponse(as, client, response, {
-		expectedNonce: auth0AuthRequest.nonce,
+		expectedNonce: kindeAuthRequest.nonce,
 		requireIdToken: true,
 	});
 
 	// Get the claims from the id_token
 	const claims = oauth.getValidatedIdTokenClaims(result);
 	if (!claims) {
-		return c.text("Received invalid id_token from Auth0", 400);
+		return c.text("Received invalid id_token from Kinde", 400);
 	}
 
 	// Complete the authorization
 	const { redirectTo } = await c.env.OAUTH_PROVIDER.completeAuthorization({
-		request: auth0AuthRequest.mcpAuthRequest,
+		request: kindeAuthRequest.mcpAuthRequest,
 		userId: claims.sub!,
 		metadata: {
 			label: claims.name || claims.email || claims.sub,
 		},
-		scope: auth0AuthRequest.mcpAuthRequest.scope,
+		scope: kindeAuthRequest.mcpAuthRequest.scope,
 		props: {
 			claims: claims,
 			tokenSet: {
@@ -264,13 +269,13 @@ export async function callback(c: Context<{ Bindings: Env & { OAUTH_PROVIDER: OA
 /**
  * Token Exchange Callback
  *
- * This function handles the token exchange callback for the CloudflareOAuth Provider and allows us to then interact with the Upstream IdP (your Auth0 tenant)
+ * This function handles the token exchange callback for the CloudflareOAuth Provider and allows us to then interact with the Upstream IdP (your Kinde tenant)
  */
 export async function tokenExchangeCallback(
 	options: TokenExchangeCallbackOptions,
 ): Promise<TokenExchangeCallbackResult | void> {
 	// During the Authorization Code Exchange, we want to make sure that the Access Token issued
-	// by the MCP Server has the same TTL as the one issued by Auth0.
+	// by the MCP Server has the same TTL as the one issued by Kinde.
 	if (options.grantType === "authorization_code") {
 		return {
 			newProps: {
@@ -281,30 +286,30 @@ export async function tokenExchangeCallback(
 	}
 
 	if (options.grantType === "refresh_token") {
-		const auth0RefreshToken = options.props.tokenSet.refreshToken;
-		if (!auth0RefreshToken) {
-			throw new Error("No Auth0 refresh token found");
+		const kindeRefreshToken = options.props.tokenSet.refreshToken;
+		if (!kindeRefreshToken) {
+			throw new Error("No Kinde refresh token found");
 		}
 
 		const { as, client, clientAuth } = await getOidcConfig({
-			issuer: `https://${env.AUTH0_DOMAIN}/`,
-			client_id: env.AUTH0_CLIENT_ID,
-			client_secret: env.AUTH0_CLIENT_SECRET,
+			issuer: `https://${env.KINDE_DOMAIN}/`,
+			client_id: env.KINDE_CLIENT_ID,
+			client_secret: env.KINDE_CLIENT_SECRET,
 		});
 
-		// Perform the refresh token exchange with Auth0.
+		// Perform the refresh token exchange with Kinde.
 		const response = await oauth.refreshTokenGrantRequest(
 			as,
 			client,
 			clientAuth,
-			auth0RefreshToken,
+			kindeRefreshToken,
 		);
 		const refreshTokenResponse = await oauth.processRefreshTokenResponse(as, client, response);
 
 		// Get the claims from the id_token
 		const claims = oauth.getValidatedIdTokenClaims(refreshTokenResponse);
 		if (!claims) {
-			throw new Error("Received invalid id_token from Auth0");
+			throw new Error("Received invalid id_token from Kinde");
 		}
 
 		// Store the new token set and claims.
@@ -316,7 +321,7 @@ export async function tokenExchangeCallback(
 					idToken: refreshTokenResponse.id_token,
 					accessToken: refreshTokenResponse.access_token,
 					accessTokenTTL: refreshTokenResponse.expires_in,
-					refreshToken: refreshTokenResponse.refresh_token || auth0RefreshToken,
+					refreshToken: refreshTokenResponse.refresh_token || kindeRefreshToken,
 				},
 			},
 			accessTokenTTL: refreshTokenResponse.expires_in,
